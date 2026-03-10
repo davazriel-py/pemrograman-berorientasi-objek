@@ -74,6 +74,10 @@ class Player:
             self.width = 20
         if self.height < 20:
             self.height = 20
+        if self.width > 400:
+            self.width = 400
+        if self.height > 400:
+            self.height = 400
 
     def draw(self, screen):
         pygame.draw.rect(screen, self.color, (self.x, self.y, self.width, self.height))
