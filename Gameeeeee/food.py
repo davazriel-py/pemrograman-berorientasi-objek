@@ -14,6 +14,8 @@ BOMB_TARGET_W   = 84
 PLAYER_EAT_FILE = "playereat.png"
 PLAYER_EAT_ANIM_FRAMES = 10
 EAT_SOUND_FILE  = "nyam.mp3"
+GAME_OVER_SOUND_FILE = "gameover.mp3"
+SKY_FILE         = "sky.jpg"
 GROUND_TARGET_H = 95
 GROUND_FILE     = "ground.png"
 HEART_TARGET_W  = 28
@@ -24,19 +26,19 @@ C_BLACK  = (0,   0,   0)
 
 PLAYER_SPEED        = 10
 FISH_BASE_SPEED    = 4
-FISH_MAX_SPEED     = 11 
+FISH_MAX_SPEED     = 12
 FISH_SPEED_STEP    = 1.2
 FISH_SPEEDUP_EVERY = FPS * 10
-BOMB_BASE_SPEED     = 4       # kecepatan awal bom
-BOMB_MAX_SPEED      = 10      # batas atas bom (ditaurunkan sedikit untuk balancing)
-BOMB_SPEED_STEP     = 1.1     # kenaikan speed bom tiap periodea
-BOMB_SPEEDUP_EVERY  = FPS * 11  # setiap 11 detik, speed bom naik
-SPAWN_BASE_INTERVAL = 66      # jeda awal spawn objek (~1.1 detik @60fps)
-SPAWN_MIN_INTERVAL  = 30      # batas interval minimum (~0.5 detik @60fps)
-SPAWN_INTERVAL_STEP = 6       # percepatan spawn per periode (interval dikurangi 6 frame)
-SPAWN_SPEEDUP_EVERY = FPS * 10  # setiap 10 detik, spawn makin cepat
-BOMB_SPAWN_CHANCE   = 0.175    # 15% bom, sisanya buah
-MAX_MISS            = 3       # maksimal miss sebelum game over
+BOMB_BASE_SPEED     = 4
+BOMB_MAX_SPEED      = 12
+BOMB_SPEED_STEP     = 1.2
+BOMB_SPEEDUP_EVERY  = FPS * 10
+SPAWN_BASE_INTERVAL = 66
+SPAWN_MIN_INTERVAL  = 30
+SPAWN_INTERVAL_STEP = 6
+SPAWN_SPEEDUP_EVERY = FPS * 10
+BOMB_SPAWN_CHANCE   = 0.17
+MAX_MISS            = 3
 PLAYER_HITBOX_SHRINK_X = 0.34
 PLAYER_HITBOX_SHRINK_Y = 0.22
 BOMB_HITBOX_SHRINK_X   = 0.56
@@ -44,20 +46,7 @@ BOMB_HITBOX_SHRINK_Y   = 0.56
 FISH_HITBOX_SHRINK_X  = 0.28
 FISH_HITBOX_SHRINK_Y  = 0.28
 
-# -----------------------------------------------------------------------------
-#  PARENT CLASS � GameObject
-# -----------------------------------------------------------------------------
 class GameObject:
-    """
-    Base class untuk semua objek visual dalam game.
-
-    Atribut bersama (diwarisi semua child class):
-        x, y   : posisi di layar
-        width  : lebar (dari ukuran gambar)
-        height : tinggi (dari ukuran gambar)
-        image  : Surface dari file PNG (di-load via pygame.image.load)
-    """
-
     def __init__(self, x: int, y: int, image: pygame.Surface):
         self.image  = image
         self.width  = image.get_width()
@@ -66,39 +55,17 @@ class GameObject:
         self.y      = y
 
     def get_rect(self) -> pygame.Rect:
-        """
-        Kembalikan pygame.Rect � digunakan untuk collision detection.
-        Method ini diwarisi & dipakai langsung oleh semua child class.
-        """
         return pygame.Rect(self.x, self.y, self.width, self.height)
 
     def draw(self, surface: pygame.Surface):
-        """
-        Gambar objek ke layar menggunakan surface.blit().
-        Child class bisa meng-override method ini jika perlu efek tambahan.
-        """
         surface.blit(self.image, (self.x, self.y))
 
 
-# -----------------------------------------------------------------------------
-#  CHILD CLASS � Player   (mewarisi GameObject)
-# -----------------------------------------------------------------------------
 class Player(GameObject):
-    """
-    Karakter yang dikendalikan pemain.
-
-    Mewarisi: x, y, width, height, image, get_rect(), draw()
-    Tambahan:
-        speed (int)  : kecepatan gerak horizontal
-        score (int)  : jumlah buah tertangkap
-        miss  (int)  : jumlah buah yang lolos
-    """
-
     def __init__(self, image: pygame.Surface, eat_image: pygame.Surface | None = None):
-        # Posisi awal: tengah bawah layar
         x = SCREEN_W // 2 - image.get_width()  // 2
-        y = SCREEN_H - image.get_height() - 20
-        super().__init__(x, y, image)   # ? panggil __init__ parent
+        y = SCREEN_H - image.get_height() - 50
+        super().__init__(x, y, image)
 
         self.normal_image = image
         self.eat_image = eat_image if eat_image is not None else image
@@ -108,7 +75,6 @@ class Player(GameObject):
         self.miss  = 0
 
     def move(self, keys):
-        """Gerakkan player sesuai tombol, dibatasi tepi layar."""
         if keys[pygame.K_LEFT]  or keys[pygame.K_a]:
             self.x -= self.speed
         if keys[pygame.K_RIGHT] or keys[pygame.K_d]:
@@ -116,42 +82,27 @@ class Player(GameObject):
         self.x = max(0, min(SCREEN_W - self.width, self.x))
 
     def trigger_eat_animation(self, duration_frames: int = PLAYER_EAT_ANIM_FRAMES):
-        """Tampilkan sprite makan sementara, lalu kembali ke sprite normal."""
         self.eat_anim_timer = max(1, duration_frames)
         self.image = self.eat_image
 
     def update_animation(self):
-        """Update timer animasi player tiap frame."""
         if self.eat_anim_timer > 0:
             self.eat_anim_timer -= 1
             if self.eat_anim_timer == 0:
                 self.image = self.normal_image
 
 
-# -----------------------------------------------------------------------------
-#  CHILD CLASS � FISH   (mewarisi GameObject)
-# -----------------------------------------------------------------------------
 class Fish(GameObject):
-    """
-    Buah yang jatuh dari atas.
-
-    Mewarisi: x, y, width, height, image, get_rect(), draw()
-    Tambahan:
-        speed  (float): kecepatan jatuh (naik bertahap seiring waktu game)
-        active (bool) : True selama belum tertangkap
-    """
-
     def __init__(self, image: pygame.Surface, x: int, speed: float = FISH_BASE_SPEED):
-        y = -image.get_height()   # mulai dari atas (tersembunyi)
+        y = -image.get_height()
         super().__init__(x, y, image)
 
         self.speed  = speed
         self.active = True
-        self.angle = random.uniform(0, 360)  # angle awal acak tiap buah spawn
-        self.rotate_speed = 0.8              # arah putar tetap (tidak diacak)
+        self.angle = random.uniform(0, 360)
+        self.rotate_speed = 0.8
 
     def update(self):
-        """Gerakkan buah ke bawah."""
         self.y += self.speed
         self.angle = (self.angle + self.rotate_speed) % 360
 
@@ -159,26 +110,13 @@ class Fish(GameObject):
         return self.y > SCREEN_H
 
     def draw(self, surface: pygame.Surface):
-        """Gambar buah dengan rotasi halus tanpa mengubah area collision."""
         rotated = pygame.transform.rotozoom(self.image, self.angle, 1.0)
         center = (self.x + self.width // 2, self.y + self.height // 2)
         rect = rotated.get_rect(center=center)
         surface.blit(rotated, rect.topleft)
 
 
-# -----------------------------------------------------------------------------
-#  CHILD CLASS � Bomb   (mewarisi GameObject)
-# -----------------------------------------------------------------------------
 class Bomb(GameObject):
-    """
-    Bom yang jatuh dari atas. Kena satu kali ? game over.
-
-    Mewarisi: x, y, width, height, image, get_rect(), draw()
-    Tambahan:
-        speed  (float): kecepatan jatuh (naik bertahap seiring waktu game)
-        active (bool) : True selama belum kena player
-    """
-
     def __init__(self, image: pygame.Surface, x: int, speed: float = BOMB_BASE_SPEED):
         y = -image.get_height()
         super().__init__(x, y, image)
@@ -187,34 +125,20 @@ class Bomb(GameObject):
         self.active = True
 
     def update(self):
-        """Gerakkan bom ke bawah."""
         self.y += self.speed
 
     def is_off_screen(self) -> bool:
         return self.y > SCREEN_H
 
 
-# -----------------------------------------------------------------------------
-#  HELPER � Background
-# -----------------------------------------------------------------------------
-def draw_background(surface: pygame.Surface, ground_img=None):
-    """Gradien langit + tanah (bisa pakai PNG ground)."""
-    sky_top = (140, 210, 255)
-    sky_bot = (215, 240, 255)
+def draw_background(surface: pygame.Surface, ground_img=None, sky_img=None):
     ground_h = ground_img.get_height() if ground_img else GROUND_TARGET_H
     ground_y = SCREEN_H - ground_h
 
-    # Gambar langit sampai bawah agar area PNG ground yang transparan
-    # tidak memperlihatkan warna hitam/frame lama.
-    for row in range(SCREEN_H):
-        t = row / max(1, SCREEN_H - 1)
-        r = int(sky_top[0] + (sky_bot[0] - sky_top[0]) * t)
-        g = int(sky_top[1] + (sky_bot[1] - sky_top[1]) * t)
-        b = int(sky_top[2] + (sky_bot[2] - sky_top[2]) * t)
-        pygame.draw.line(surface, (r, g, b), (0, row), (SCREEN_W, row))
+    if sky_img is not None:
+        surface.blit(sky_img, (0, 0))
 
     if ground_img:
-        # Tile PNG ground agar memenuhi lebar layar.
         for x in range(0, SCREEN_W, ground_img.get_width()):
             surface.blit(ground_img, (x, ground_y))
     else:
@@ -226,7 +150,6 @@ def draw_background(surface: pygame.Surface, ground_img=None):
 
 def draw_hud(surface, player: Player, heart_img: pygame.Surface,
              font_med, font_sm):
-    # Panel transparan di atas
     panel = pygame.Surface((SCREEN_W, 54), pygame.SRCALPHA)
     panel.fill((0, 0, 0, 110))
     surface.blit(panel, (0, 0))
@@ -234,7 +157,6 @@ def draw_hud(surface, player: Player, heart_img: pygame.Surface,
     score_txt = font_med.render(f"Skor: {player.score}", True, C_WHITE)
     surface.blit(score_txt, (12, 10))
 
-    # Hati sisa nyawa
     lives = MAX_MISS - player.miss
     for i in range(MAX_MISS):
         hx = SCREEN_W - 38 - i * 36
@@ -246,7 +168,6 @@ def draw_hud(surface, player: Player, heart_img: pygame.Surface,
             surface.blit(grey, (hx, 12))
 
 def load_image_scaled(name: str, target_w: int) -> pygame.Surface:
-    """Load PNG dari folder assets dan skala proporsional berdasarkan lebar."""
     img = pygame.image.load(os.path.join(ASSET_DIR, name)).convert_alpha()
     w, h = img.get_size()
     if w == 0 or h == 0:
@@ -257,10 +178,6 @@ def load_image_scaled(name: str, target_w: int) -> pygame.Surface:
 
 
 def load_fish_images(target_w: int) -> list[pygame.Surface]:
-    """
-    Load semua file ikan dari assets dengan pola nama fish*.png.
-    Contoh: fish.png, fish2.png, fish_biru.png.
-    """
     fish_names = sorted(
         file_name
         for file_name in os.listdir(ASSET_DIR)
@@ -276,7 +193,6 @@ def load_fish_images(target_w: int) -> list[pygame.Surface]:
 
 
 def load_heart_image(name: str, target_w: int):
-    """Load heart PNG untuk HUD; return None jika file tidak valid."""
     path = os.path.join(ASSET_DIR, name)
     if not os.path.exists(path):
         return None
@@ -296,14 +212,11 @@ def load_heart_image(name: str, target_w: int):
 
 
 def load_ground_image(name: str, target_h: int):
-    """Load ground PNG jika ada; return None kalau file tidak ditemukan."""
     path = os.path.join(ASSET_DIR, name)
     if not os.path.exists(path):
         return None
 
     img = pygame.image.load(path).convert_alpha()
-    # Buang area transparan di tepi (umumnya bagian atas) agar tidak
-    # memunculkan artefak gelap saat gambar di-scale.
     bbox = img.get_bounding_rect(min_alpha=1)
     if bbox.width > 0 and bbox.height > 0:
         img = img.subsurface(bbox).copy()
@@ -317,8 +230,20 @@ def load_ground_image(name: str, target_h: int):
     return pygame.transform.smoothscale(img, (target_w, target_h))
 
 
+def load_sky_image(name: str, target_size: tuple[int, int]):
+    path = os.path.join(ASSET_DIR, name)
+    if not os.path.exists(path):
+        return None
+
+    try:
+        img = pygame.image.load(path).convert_alpha()
+    except pygame.error:
+        return None
+
+    return pygame.transform.smoothscale(img, target_size)
+
+
 def load_sound(name: str):
-    """Load file audio dari assets; return None jika gagal dimuat."""
     path = os.path.join(ASSET_DIR, name)
     if not os.path.exists(path):
         return None
@@ -329,10 +254,6 @@ def load_sound(name: str):
 
 
 def shrink_rect(rect: pygame.Rect, shrink_x: float, shrink_y: float) -> pygame.Rect:
-    """
-    Kecilkan hitbox secara proporsional.
-    Nilai shrink 0.30 artinya mengecilkan 30% dari ukuran asli pada sumbu itu.
-    """
     dx = int(rect.width * shrink_x)
     dy = int(rect.height * shrink_y)
     dx = max(0, min(dx, rect.width - 2))
@@ -340,19 +261,15 @@ def shrink_rect(rect: pygame.Rect, shrink_x: float, shrink_y: float) -> pygame.R
     return rect.inflate(-dx, -dy)
 
 
-# -----------------------------------------------------------------------------
-#  LAYAR START
-# -----------------------------------------------------------------------------
 def screen_start(surface, clock, player_img, fish_imgs, bomb_img,
-                 ground_img, font_big, font_med, font_sm):
+                 ground_img, sky_img, font_big, font_med, font_sm):
     tick = 0
     while True:
         tick += 1
-        draw_background(surface, ground_img)
+        draw_background(surface, ground_img, sky_img)
 
         title = font_big.render("Catch the Fish!", True, (200, 50, 30))
         surface.blit(title, (SCREEN_W // 2 - title.get_width() // 2, 75))
-        # Demo item
         bob = int(math.sin(tick * 0.05) * 8)
         fish_preview = fish_imgs[(tick // 25) % len(fish_imgs)]
         surface.blit(fish_preview,  (60,  175 + bob))
@@ -383,16 +300,13 @@ def screen_start(surface, clock, player_img, fish_imgs, bomb_img,
                 return
 
 
-# -----------------------------------------------------------------------------
-#  LAYAR GAME OVER
-# -----------------------------------------------------------------------------
 def screen_game_over(surface, clock, score: int, reason: str,
                      high_score: int, is_new_high: bool,
-                     ground_img, font_big, font_med, font_sm) -> bool:
+                     ground_img, sky_img, font_big, font_med, font_sm) -> bool:
     tick = 0
     while True:
         tick += 1
-        draw_background(surface, ground_img)
+        draw_background(surface, ground_img, sky_img)
 
         ov = pygame.Surface((SCREEN_W, SCREEN_H), pygame.SRCALPHA)
         ov.fill((0, 0, 0, 145))
@@ -429,14 +343,10 @@ def screen_game_over(surface, clock, score: int, reason: str,
                 if event.key == pygame.K_ESCAPE: return False
 
 
-# -----------------------------------------------------------------------------
-#  MAIN GAME LOOP
-# -----------------------------------------------------------------------------
 def run_game(surface, clock, player_img, player_eat_img, fish_imgs, bomb_img,
-             heart_img, ground_img, font_med, font_sm, eat_sound=None) -> tuple:
-    """Jalankan satu sesi game. Kembalikan (skor, alasan_game_over)."""
+             heart_img, ground_img, sky_img, font_med, font_sm,
+             eat_sound=None, game_over_sound=None) -> tuple:
 
-    # -- Instansiasi objek ------------------------------------------------
     player = Player(player_img, player_eat_img)  # 1 objek Player
     fishes: list = []                           # list objek FISH aktif
     bombs: list = []                            # list objek Bomb  aktif
@@ -454,7 +364,6 @@ def run_game(surface, clock, player_img, player_eat_img, fish_imgs, bomb_img,
     while running:
         clock.tick(FPS)
 
-        # -- Event ---------------------------------------------------------
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 pygame.quit(); sys.exit()
@@ -462,7 +371,6 @@ def run_game(surface, clock, player_img, player_eat_img, fish_imgs, bomb_img,
                 game_over_reason = "Keluar manual"
                 running = False
 
-        # -- Difficulty ramp: speed buah & bom naik bertahap + ada batas ----
         fish_speedup_timer += 1
         if fish_speedup_timer >= FISH_SPEEDUP_EVERY:
             fish_speedup_timer = 0
@@ -473,14 +381,11 @@ def run_game(surface, clock, player_img, player_eat_img, fish_imgs, bomb_img,
             bomb_speedup_timer = 0
             bomb_speed = min(BOMB_MAX_SPEED, bomb_speed + BOMB_SPEED_STEP)
 
-        # -- Spawn ramp: interval makin pendek seiring waktu (hingga batas min) -
         spawn_speedup_timer += 1
         if spawn_speedup_timer >= SPAWN_SPEEDUP_EVERY:
             spawn_speedup_timer = 0
             spawn_interval = max(SPAWN_MIN_INTERVAL, spawn_interval - SPAWN_INTERVAL_STEP)
 
-        # -- Spawn objek (satu sistem):
-        # Tiap interval spawn 1 objek: mayoritas buah, bom lebih jarang.
         spawn_timer += 1
         if spawn_timer >= spawn_interval:
             spawn_timer = 0
@@ -491,25 +396,21 @@ def run_game(surface, clock, player_img, player_eat_img, fish_imgs, bomb_img,
             else:
                 fish_img = random.choice(fish_imgs)
                 fx = random.randint(10, SCREEN_W - fish_img.get_width() - 10)
-                fishes.append(Fish(fish_img, fx, FISH_speed))
+                fishes.append(Fish(fish_img, fx, fish_speed))
 
-        # -- Gerak player --------------------------------------------------
         keys = pygame.key.get_pressed()
-        player.move(keys)                         # method dari class Player
+        player.move(keys)
         player.update_animation()
 
-        # Hitbox player diperkecil supaya tabrakan lebih fair (tidak "kena jarak jauh")
         p_rect = shrink_rect(
             player.get_rect(),
             PLAYER_HITBOX_SHRINK_X,
             PLAYER_HITBOX_SHRINK_Y
         )
 
-        # -- Update buah & cek collision -----------------------------------
         for fish in fishes[:]:
-            fish.update()   # method dari class FISH
+            fish.update()
 
-            # Zona tangkap: area atas player
             catch_zone = pygame.Rect(
                 player.x - 6, player.y,
                 player.width + 12, player.height // 2
@@ -531,17 +432,17 @@ def run_game(surface, clock, player_img, player_eat_img, fish_imgs, bomb_img,
                 continue
 
             if fish.is_off_screen():
-                # Buah lolos ? miss
                 player.miss += 1
                 fishes.remove(fish)
                 if player.miss >= MAX_MISS:
-                    game_over_reason = f"Buah lolos {MAX_MISS}x  \U0001f494"
+                    game_over_reason = f"Fish lolos {MAX_MISS}x  \U0001f494"
+                    if game_over_sound is not None:
+                        game_over_sound.play()
                     running = False
                     break
 
-        # -- Update bom & cek collision ------------------------------------
         for bomb in bombs[:]:
-            bomb.update()   # method dari class Bomb
+            bomb.update()
 
             bomb_hitbox = shrink_rect(
                 bomb.get_rect(),
@@ -549,24 +450,24 @@ def run_game(surface, clock, player_img, player_eat_img, fish_imgs, bomb_img,
                 BOMB_HITBOX_SHRINK_Y
             )
             if bomb.active and p_rect.colliderect(bomb_hitbox):
-                # Kena bom ? langsung game over
                 game_over_reason = "Kena Bom! \U0001f4a3"
+                if game_over_sound is not None:
+                    game_over_sound.play()
                 running = False
                 break
 
             if bomb.is_off_screen():
                 bombs.remove(bomb)
 
-        # -- Render --------------------------------------------------------
-        draw_background(surface, ground_img)
+        draw_background(surface, ground_img, sky_img)
 
         for fish in fishes:
-            fish.draw(surface)   # draw() diwarisi dari parent, pakai blit()
+            fish.draw(surface)
 
         for bomb in bombs:
-            bomb.draw(surface)    # draw() diwarisi dari parent, pakai blit()
+            bomb.draw(surface)
 
-        player.draw(surface)      # draw() diwarisi dari parent, pakai blit()
+        player.draw(surface)
 
         draw_hud(surface, player, heart_img, font_med, font_sm)
 
@@ -575,9 +476,6 @@ def run_game(surface, clock, player_img, player_eat_img, fish_imgs, bomb_img,
     return player.score, game_over_reason
 
 
-# -----------------------------------------------------------------------------
-#  ENTRY POINT
-# -----------------------------------------------------------------------------
 def main():
     pygame.init()
     try:
@@ -591,36 +489,36 @@ def main():
     clock = pygame.time.Clock()
 
 
-    # Load gambar menggunakan pygame.image.load() � sesuai requirement
     player_img = load_image_scaled("player.png", PLAYER_TARGET_W)
     player_eat_img = load_image_scaled(PLAYER_EAT_FILE, PLAYER_TARGET_W)
     if player_eat_img.get_size() != player_img.get_size():
         player_eat_img = pygame.transform.smoothscale(player_eat_img, player_img.get_size())
     fish_imgs = load_fish_images(FISH_TARGET_W)
     bomb_img   = load_image_scaled("bomb.png", BOMB_TARGET_W)
+    sky_img    = load_sky_image(SKY_FILE, (SCREEN_W, SCREEN_H))
     ground_img = load_ground_image(GROUND_FILE, GROUND_TARGET_H)
     heart_img  = load_heart_image(HEART_FILE, HEART_TARGET_W)
     eat_sound  = load_sound(EAT_SOUND_FILE)
+    game_over_sound = load_sound(GAME_OVER_SOUND_FILE)
 
     font_big = pygame.font.SysFont("comicsansms", 40, bold=True)
     font_med = pygame.font.SysFont("comicsansms", 26, bold=True)
     font_sm  = pygame.font.SysFont("comicsansms", 20)
     high_score = 0
 
-    # -- Alur Game: Start ? Main Game ? Game Over --------------------------
     screen_start(screen, clock, player_img, fish_imgs, bomb_img,
-                 ground_img, font_big, font_med, font_sm)
+                 ground_img, sky_img, font_big, font_med, font_sm)
 
     while True:
         score, reason = run_game(screen, clock, player_img, player_eat_img, fish_imgs,
-                                 bomb_img, heart_img, ground_img, font_med, font_sm,
-                                 eat_sound)
+                                 bomb_img, heart_img, ground_img, sky_img,
+                                 font_med, font_sm, eat_sound, game_over_sound)
         is_new_high = score > high_score
         if is_new_high:
             high_score = score
         play_again = screen_game_over(screen, clock, score, reason,
                                       high_score, is_new_high,
-                                      ground_img, font_big, font_med, font_sm)
+                                      ground_img, sky_img, font_big, font_med, font_sm)
         if not play_again:
             break
 
